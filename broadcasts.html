@@ -1,0 +1,429 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Broadcasts D3</title>
+<script src="js/d3/d3.js"></script>
+<script src="js/jquery-2.1.1.js"></script>
+<script src="js/jquery.tipsy.js"></script>
+<script src="js/queue.min.js"></script>
+<script type="text/javascript" src="js/busy/cvi_busy_lib.js"></script>
+<!--<script src="broadcasts.js" type="text/javascript"></script>-->
+<link href="css/broadcasts.css" rel="stylesheet" type="text/css">
+<link href="css/tipsy.css" rel="stylesheet" type="text/css" />
+<link rel=”image_src” href=”broadcasts-preview.jpg” />
+<meta property="og:image" content="http://art-tech.arts.ufl.edu/~jack/viz/broadcasts-preview.jpg"/>
+</head>
+
+<body>
+<div id="header">
+    <div id="titleContainer">
+        <div id="title">
+            <h1>Major U.S. Television News Broadcast Sentiment ~2003 - Present.</h1>
+        </div>
+        <div class="icon"><a href="http://emeragency.electracy.org/broadcasts" target="_blank"><img src="broadcasts-preview.jpg" width="50px" height="50px" alt=""/></a></div>
+        <div class="clear"></div>
+    </div>
+    <div id="result">Patience is a virtue!</div>
+</div>
+
+<script>
+    /**
+     * D3 visualization for PNN broadcasts
+     * Based on Mike Bostock's Zoomable Area:
+     ^ http://bl.ocks.org/mbostock/4015254
+     */
+
+    var cbsJSON, abcJSON, foxJSON, pbsJSON, nbcJSON;
+    var data;
+    var totalBroadcasts;
+    var SymbolEnum = Object.freeze({CIRCLE:0,CROSS:1,DIAMOND:2,SQUARE:3,TRIANGLEDOWN:4,TRIANGLEUP:5});
+    var currentSymbolType = SymbolEnum.CIRCLE;
+
+    var ctrl = getBusyOverlay("viewport", {text:"Loading broadcasts...", style:"loadTxt"}, {color:'#999999', opacity:0.25});
+    ctrl.settext("Loading broadcasts from network....");
+
+    queue(2)
+            .defer(d3.json, "http://emeragency.electracy.org/pnn/broadcasts.json?network=CBS")
+            .defer(d3.json, "http://emeragency.electracy.org/pnn/broadcasts.json?network=ABC")
+            .defer(d3.json, "http://emeragency.electracy.org/pnn/broadcasts.json?network=NBC")
+            .defer(d3.json, "http://emeragency.electracy.org/pnn/broadcasts.json?network=FOX")
+            .defer(d3.json, "http://emeragency.electracy.org/pnn/broadcasts.json?network=PBS")
+            .awaitAll(ready); // awaitAll packs each result above into a single array indexed in order above: 0-4.
+
+
+    var margin = {
+                top: 20,
+                right: 60,
+                bottom: 30,
+                left: 20
+            },
+            width = $(window).width() - margin.left - margin.right,
+            //height = $(window).height() * .5 - margin.top - margin.bottom;
+            height = width * .5625; // 16:9 ratio
+
+    // my data is coming in with 00:00:00 time at the end :-(
+    var parseDate = d3.time.format("%Y-%m-%d %X").parse,
+            formatDate = d3.time.format("%Y");
+
+    var x = d3.time.scale().range([0, width]);
+
+    var y = d3.scale.linear().range([height, 0]);
+
+    var xAxis = d3.svg.axis().scale(x).orient("bottom").tickSize(-height, 0).tickPadding(6);
+
+    var yAxis = d3.svg.axis().scale(y).orient("right").tickSize(-width).tickPadding(6);
+
+    var colors = d3.scale.category20();
+
+
+    // Interpolation choices: linear, step-before, step-after, basis, basis-open, basis-closed
+    // bundle, cardinal, cardinal-open, cardinal-closed, monotone
+    var area = d3.svg.area().interpolate("basis").x(function (d) {
+        return x(d.date);
+    }).y0(y(0)).y1(function (d) {
+        return y(d.sentiment);
+    });
+
+
+    var line = d3.svg.line().interpolate("basis").x(function (d) {
+        return x(d.date);
+    }).y(function (d) {
+        return y(d.sentiment);
+    });
+
+
+    // symbol() doesn't have a x,y accessor functions, so position is via transform.
+    var symbolShape = d3.svg.symbol()
+            .size( function(d) { return 64; })
+            .type( function(d) { return d3.svg.symbolTypes[currentSymbolType]; });
+
+    var svg = d3.select("body").append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom + 10)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .attr("viewBox", "0 0 " + (width + margin.left + margin.right) + " " + (height + margin.top + margin.bottom))
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+
+    var zoom = d3.behavior.zoom().on("zoom", draw);
+
+
+    var gradientCBS = svg.append("defs").append("linearGradient").attr("id", "gradientCBS").attr("x2", "0%").attr("y2", "100%");
+    gradientCBS.append("stop").attr("offset", "0%").attr("stop-color", "#004021").attr("stop-opacity", .1);
+    gradientCBS.append("stop").attr("offset", "100%").attr("stop-color", "#9BC7B2").attr("stop-opacity",.5);
+
+    var gradientABC = svg.select("defs").append("linearGradient").attr("id", "gradientABC").attr("x2", "0%").attr("y2", "100%");
+    gradientABC.append("stop").attr("offset", "0%").attr("stop-color", "#022C3A").attr("stop-opacity", .1); // darker color
+    gradientABC.append("stop").attr("offset", "100%").attr("stop-color", "#92B0BA").attr("stop-opacity",.5); // lighter color
+
+    var gradientNBC = svg.select("defs").append("linearGradient").attr("id", "gradientNBC").attr("x2", "0%").attr("y2", "100%");
+    gradientNBC.append("stop").attr("offset", "0%").attr("stop-color", "#5C2F00").attr("stop-opacity", .1);
+    gradientNBC.append("stop").attr("offset", "100%").attr("stop-color", "#FFE3C6").attr("stop-opacity",.5);
+
+    var gradientFOX = svg.select("defs").append("linearGradient").attr("id", "gradientFOX").attr("x2", "0%").attr("y2", "100%");
+    gradientFOX.append("stop").attr("offset", "0%").attr("stop-color", "#5C1800").attr("stop-opacity", .1); // darker color
+    gradientFOX.append("stop").attr("offset", "100%").attr("stop-color", "#FFD5C6").attr("stop-opacity",.5); // lighter color
+
+    var gradientPBS = svg.select("defs").append("linearGradient").attr("id", "gradientPBS").attr("x2", "0%").attr("y2", "100%");
+    gradientPBS.append("stop").attr("offset", "0%").attr("stop-color", "#011F29").attr("stop-opacity", .1); // darker color
+    gradientPBS.append("stop").attr("offset", "100%").attr("stop-color", "#72939E").attr("stop-opacity",.5); // lighter color
+
+    svg.append("clipPath").attr("id", "clip").append("rect").attr("x", x(0)).attr("y", y(1)).attr("width", x(1) - x(0)).attr("height", y(0) - y(1));
+
+    svg.append("g").attr("class", "y axis").attr("transform", "translate(" + width + ",0)");
+
+    var cbsGroup = svg.append("g").attr("class", "cbs");
+    cbsGroup.append("path").attr("class", "area").attr("clip-path", "url(#clip)").style("fill", "url(#gradientCBS)");
+    cbsGroup.append("path").attr("class", "line").attr("clip-path", "url(#clip)");
+
+    var abcGroup = svg.append("g").attr("class", "abc");
+    abcGroup.append("path").attr("class", "area").attr("clip-path", "url(#clip)").style("fill", "url(#gradientABC)");
+    abcGroup.append("path").attr("class", "line").attr("clip-path", "url(#clip)");
+
+    var nbcGroup = svg.append("g").attr("class", "nbc");
+    nbcGroup.append("path").attr("class", "area").attr("clip-path", "url(#clip)").style("fill", "url(#gradientNBC)");
+    nbcGroup.append("path").attr("class", "line").attr("clip-path", "url(#clip)");
+
+    var foxGroup = svg.append("g").attr("class", "fox");
+    foxGroup.append("path").attr("class", "area").attr("clip-path", "url(#clip)").style("fill", "url(#gradientFOX)");
+    foxGroup.append("path").attr("class", "line").attr("clip-path", "url(#clip)");
+
+    var pbsGroup = svg.append("g").attr("class", "pbs");
+    pbsGroup.append("path").attr("class", "area").attr("clip-path", "url(#clip)").style("fill", "url(#gradientPBS)");
+    pbsGroup.append("path").attr("class", "line").attr("clip-path", "url(#clip)");
+
+
+    svg.append("g").attr("class", "x axis").attr("transform", "translate(0," + height + ")");
+
+    svg.append("rect").attr("class", "pane").attr("width", width).attr("height", height).call(zoom);
+
+    // This has to be AFTER the rect pane above, or tooltips won't respond!
+    var symbolsGroup = svg.append("g").attr("class", "symbols").attr("clip-path", "url(#clip)");
+    symbolsGroup.append("g").attr("class", "symcbs");
+    symbolsGroup.append("g").attr("class", "symabc");
+    symbolsGroup.append("g").attr("class", "symnbc");
+    symbolsGroup.append("g").attr("class", "symfox");
+    symbolsGroup.append("g").attr("class", "sympbs");
+
+
+    function transform(d) {
+        //console.log("transform called with d.sentiment: " + d.sentiment);
+        return "translate("+x(d.date)+", "+y(d.sentiment)+")"
+    }
+
+    var tooltip = d3.select(".symbol").append("div")
+            .attr("class", "tooltip");
+
+    function ready(error, json) {
+
+        if (error) return console.warn(error);
+        data = json;
+        //console.log(data.toString());
+
+        // Clean up the data:
+        // json comes in as a single object with embedded arrays
+        // so I have to go inside each array to access the data
+        for (k in data) {
+            var k_data = data[k];
+            k_data.forEach(function (d) {
+                // go through every element and format it for use
+                // in this case, convert it to a proper D3 date format
+                d.date = parseDate(d.date);
+                //console.log(d.date);
+                // in this case, make sure the string representation of the number is an actual number (+)
+                d.sentiment = +d.sentiment;
+
+            })
+        }
+
+        // grab the appropriate index for each returned result set.
+        cbsJSON = data[0].filter(function(d) { return d.network == "CBS"});
+        abcJSON = data[1].filter(function(d) { return d.network == "ABC"});
+        nbcJSON = data[2].filter(function(d) { return d.network == "NBC"});
+        foxJSON = data[3].filter(function(d) { return d.network == "FOX"});
+        pbsJSON = data[4].filter(function(d) { return d.network == "PBS"});
+
+        var meanCBS = d3.mean(cbsJSON,function(d) { return +d.sentiment});
+        var meanABC = d3.mean(abcJSON,function(d) { return +d.sentiment});
+        var meanNBC = d3.mean(nbcJSON,function(d) { return +d.sentiment});
+        var meanFOX = d3.mean(foxJSON,function(d) { return +d.sentiment});
+        var meanPBS = d3.mean(pbsJSON,function(d) { return +d.sentiment});
+
+        totalBroadcasts = cbsJSON.length + abcJSON.length + foxJSON.length + nbcJSON.length + pbsJSON.length;
+        document.getElementById("result").textContent = error || " Total Broadcasts: " + totalBroadcasts
+                + "  |  Mean Sentiment -- ABC: " + d3.round(meanABC, 4)
+                + " -- CBS: " + d3.round(meanCBS, 4)
+                + " -- NBC: " + d3.round(meanNBC, 4)
+                + " -- FOX: " + d3.round(meanFOX, 4)
+                + " -- PBS: " + d3.round(meanPBS, 4);
+
+        console.log("CBS Broadcasts: " + cbsJSON.length);
+        console.log("ABC Broadcasts: " + abcJSON.length);
+        console.log("FOX Broadcasts: " + foxJSON.length);
+        console.log("NBC Broadcasts: " + nbcJSON.length);
+        console.log("PBS Broadcasts: " + pbsJSON.length);
+
+
+        // Our "data" object is composed of an array for each of our result sets (0-4)
+        // Let's march through them and establish which array set represents the minimum
+        // and maximum sentiment scores. We'll pass those indices to "domain" to establish our scales.
+        var maxSentiment = -1;
+        var minSentiment = 1;
+        var indexOfMaxSentiment = 0; // this is the index of the array with the highest sentiment score.
+        var indexOfMinSentiment = 0; // this is the index of the array with the smallest sentiment score.
+        for(var i = 0; i < data.length; i++){
+            var currentMaxSentiment = d3.max(data[i], function(d) {return d.sentiment;});
+            var currentMinSentiment = d3.min(data[i], function(d) {return d.sentiment;});
+            if(currentMaxSentiment > maxSentiment){
+                maxSentiment = currentMaxSentiment;
+                indexOfMaxSentiment = i;
+            }
+            if(currentMinSentiment < minSentiment){
+                minSentiment = currentMinSentiment;
+                indexOfMinSentiment = i;
+            }
+        }
+
+        // I happen to know CBS is the largest set, so data[0] works fine here.
+        x.domain(d3.extent(data[0], function (d) {
+            //console.log(d.date);
+            return d.date;
+        }));
+        y.domain([d3.min(data[indexOfMinSentiment], function (d) {
+            //console.log("min sentiment: " + d.sentiment);
+            if(d.sentiment >= -1)
+                return d.sentiment;
+        }), d3.max(data[indexOfMaxSentiment], function (d) {
+            //console.log("max sentiment: " + d.sentiment);
+            if(d.sentiment <= 1)
+                return d.sentiment;
+        })]);
+        zoom.x(x);
+
+        ctrl.remove();
+
+        draw();
+
+    }
+
+    function drawSymbols(dat){
+        var group, className;
+
+        switch(dat[0].network) {
+            case "CBS":
+                group = "g.symcbs";
+                currentSymbolType = SymbolEnum.CIRCLE;
+                className = "symbol cbs";
+                //console.log("this is cbs");
+                break;
+            case "ABC":
+                group = "g.symabc";
+                currentSymbolType = SymbolEnum.CROSS;
+                className = "symbol abc";
+                //console.log("this is abc");
+                break;
+            case "NBC":
+                group = "g.symnbc";
+                currentSymbolType = SymbolEnum.TRIANGLEUP;
+                className = "symbol nbc";
+                break;
+            case "FOX":
+                group = "g.symfox";
+                currentSymbolType = SymbolEnum.SQUARE;
+                className = "symbol fox";
+                break;
+            case "PBS":
+                group = "g.sympbs";
+                currentSymbolType = SymbolEnum.DIAMOND;
+                className = "symbol pbs";
+                break;
+            default:
+                console.log("who knows what this is?");
+        }
+
+        svg.select(group).selectAll("path").data(dat).enter().append("path")
+                .attr("class", className)
+                .attr("transform", transform)
+                .attr("d", symbolShape);
+
+        $('.symbol').tipsy({
+            gravity: 's',
+            html: true,
+            delayIn: 500,
+            delayOut: 2000,
+            title: function() {
+                var d = this.__data__, c = colors(d.i);
+                var title = d.title.slice(0,-10);
+                var bdate = d.title.slice(d.title.length - 10);
+                return '<a href="' + d.link + '" target=_blank><span style="color: white">' + title + '<br/>' + bdate + '<br/>' + d.sentiment + '</span></a>';
+            }
+        });
+
+        // This part handles the "transform" (scaling) of the symbols since they don't have x,y accessors.
+        svg.select(group).selectAll("path.symbol").attr("d", symbolShape).attr("transform", transform);
+
+    }
+
+
+    // draw() gets called one time in the beginning and on every zoom event. It's not a loop.
+    function draw() {
+
+        svg.select("g.x.axis").call(xAxis);
+        svg.select("g.y.axis").call(yAxis);
+        svg.select("g.cbs").selectAll("path.area").data([cbsJSON]).attr("d", area);
+        svg.select("g.cbs").selectAll("path.line").data([cbsJSON]).attr("d", line);
+        svg.select("g.abc").selectAll("path.area").data([abcJSON]).attr("d", area);
+        svg.select("g.abc").selectAll("path.line").data([abcJSON]).attr("d", line);
+        svg.select("g.nbc").selectAll("path.area").data([nbcJSON]).attr("d", area);
+        svg.select("g.nbc").selectAll("path.line").data([nbcJSON]).attr("d", line);
+        svg.select("g.fox").selectAll("path.area").data([foxJSON]).attr("d", area);
+        svg.select("g.fox").selectAll("path.line").data([foxJSON]).attr("d", line);
+        svg.select("g.pbs").selectAll("path.area").data([pbsJSON]).attr("d", area);
+        svg.select("g.pbs").selectAll("path.line").data([pbsJSON]).attr("d", line);
+
+        drawSymbols(cbsJSON);
+        drawSymbols(abcJSON);
+        drawSymbols(nbcJSON);
+        drawSymbols(foxJSON);
+        drawSymbols(pbsJSON);
+
+    }
+
+    // Draw these after the graph is loaded.
+    // Label for the X axis
+    svg.append("text").attr("x", width / 2).attr("y", height + margin.bottom).style("text-anchor", "middle").attr("class", "axisLabel").text("Broadcast Date");
+
+    // Label for Y axis
+    svg.append("text").attr("transform", "rotate(-90)").attr("y", width + margin.left + 10).attr("x", 0 - (height / 2)).attr("dy", "1em").style("text-anchor", "middle").attr("class", "axisLabel").text("Broadcast Sentiment Score");
+
+    $(document).ready(function(){
+        $("#ABC").click(function(){
+            $(this).toggleClass('active');
+            $("g.abc").toggle();
+            $("g.symabc").toggle();
+        });
+        $("#CBS").click(function(){
+            $(this).toggleClass('active');
+            $("g.cbs").toggle();
+            $("g.symcbs").toggle();
+        });
+        $("#NBC").click(function(){
+            $(this).toggleClass('active');
+            $("g.nbc").toggle();
+            $("g.symnbc").toggle();
+        });
+        $("#FOX").click(function(){
+            $(this).toggleClass('active');
+            $("g.fox").toggle();
+            $("g.symfox").toggle();
+        });
+        $("#PBS").click(function(){
+            $(this).toggleClass('active');
+            $("g.pbs").toggle();
+            $("g.sympbs").toggle();
+        });
+
+    });
+
+    function resize() {
+        /* Update graph using new width and height (code below) */
+        width = $(window).width() - margin.left - margin.right,
+        height = $(window).height() * .8 - margin.top - margin.bottom;
+
+        console.log("width/height: " + width + "/" + height);
+
+        d3.select("svg").attr("width", width);
+        d3.select("svg").attr("height", height);
+        d3.select("svg").attr("viewBox", "0 0 " + width + " " + height);
+        x = d3.time.scale().range([0, width]);
+        y = d3.scale.linear().range([height, 0]);
+        xAxis = d3.svg.axis().scale(x).orient("bottom").tickSize(-height, 0).tickPadding(6);
+        yAxis = d3.svg.axis().scale(y).orient("right").tickSize(-width).tickPadding(6);
+        //d3.select("g.x.axis").call(x);
+        //d3.select("g.y.axis").call(y);
+        svg.call(draw);
+        //svg.call(yAxis);
+
+    }
+
+    // For future work, would like to make this responsive, but giving up for now.
+    //d3.select(window).on('resize', resize);
+
+</script>
+
+<div id="footer">
+    <div class="buttonbar">
+        <input type="button" id="ABC" value="ABC" class="button abc">
+        <input type="button" id="CBS" value="CBS" class="button cbs">
+        <input type="button" id="NBC" value="NBC" class="button nbc">
+        <input type="button" id="FOX" value="FOX" class="button fox">
+        <input type="button" id="PBS" value="PBS" class="button pbs">
+    </div>
+    <div class="info">Zoom in and out with your scroll wheel (or equivalent). Click and drag to move laterally. Mouse over symbol for info. Click on tooltip to navigate to page.</div>
+    <div class="clear"></div>
+</div>
+
+</body>
+</html>

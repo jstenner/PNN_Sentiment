@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Context</title>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <style type="text/css">
+    </style>
+  </head>
+  <body>
+    <script type="text/javascript">
+var data =  [
+    {
+        key: 'likes',
+        values: [{ key: 'blue-frog', value: 1 }, { key: 'goodbye', value: 2 }]
+    }, 
+    {
+        key: 'dislikes',
+        values: [{ key: 'blue-frog', value: 3 }, { key: 'goodbye', value: 4 }]
+    }];
+
+var chartdivs = d3.select("body").selectAll("div.chart")
+    .data([data])
+  .enter().append("div")
+    .attr("class", "chart")
+    .style("width", "500px")
+    .style("height", "400px");
+
+chartdivs.call(chart);
+
+function chart(selection) {
+  selection.each(function(d,i) {
+    var chartdiv = d3.select(this);
+    var bar = chartdiv.selectAll(".bar")
+        .data(d)
+      .enter().append("div")
+        .attr("class", "bar")
+        .style("width", "100px")
+        .style("height", "100px")
+        .style("background-color", "red");  
+
+    var rect = bar.selectAll(".rect")
+        .data(function(d) { return d.values; })
+      .enter().append("div")
+        .attr("class", "rect")
+        .text(function(d) { return d.key; })
+        .style("background-color", "steelblue");
+      
+    bar.each(function(dbar) {
+      var bardiv = d3.select(this);
+      bardiv.selectAll(".rect")
+          .on("click", function(drect) { 
+            d3.select(this).call(onclickfunc, bardiv);
+          });
+    });
+
+    function onclickfunc(rect, bar) { // has access to chart, bar, and rect
+      chartdiv.style("background-color", bar.datum().key === 'likes' ? "green" : "grey");
+      console.log(rect.datum().key); // will print either 'blue-frog' or 'goodbye'
+    }
+  });
+}
+   </script>
+ 
+  </body>
+</html>

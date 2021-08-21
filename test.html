@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Untitled Document</title>
+<script src="d3/d3.js"></script>
+<style>
+path {
+    fill: none;
+    stroke: #000; 
+	}
+</style>
+
+</head>
+
+<body>
+
+<script>
+var line = d3.svg.line()
+    .x(function(d) { return d.x; })
+    .y(function(d) { return d.y; })
+    .tension(0);
+
+var points = [{x: 0, y: 200}, {x: 25, y: 180}, {x: 50, y: 150}, {x: 100, y: 145}, {x: 200, y: 130}, {x: 300, y: 120}, {x: 500, y: 25}];
+
+d3.select("#g-1").append("path").attr("d", line(points));
+
+var x = Math.round(points[points.length - 1].x*Math.random());
+
+var line = function(x, points){
+    var y;
+    for(var i = points.length; i--;){
+        if (points[i].x == x ) {
+           y = points[i].y;
+        } else if (points[i].x > x ) {
+            y = points[i-1].y + (points[i].y - points[i-1].y)*(x - points[i-1].x)/(points[i].x-points[i-1].x);
+        }
+    }
+    return y;
+};
+
+d3.select("#g-1").append("svg:circle")
+		.attr("cx", x)
+		.attr("cy", line(x,points))
+		.attr("r", 4.5);
+
+
+</script>
+<svg width="500" height="500">
+    <g id="g-1"></g>
+    <g id="g-2"></g>
+</svg>
+</body>
+</html>
